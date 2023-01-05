@@ -411,8 +411,8 @@ class GoogleClient(CloudClient):
         for _ in range(10):
             try:
                 bucket = GCPBucket(client=self.client, name=name)
-                blobs = self.client.list_blobs(bucket)
-                bucket.delete_blobs(blobs)
+                list_of_blobs = list(self.client.list_blobs(bucket))
+                bucket.delete_blobs(list_of_blobs)
                 bucket.delete()
                 break
             except GoogleExceptions.NotFound:
