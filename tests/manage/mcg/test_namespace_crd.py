@@ -22,6 +22,7 @@ from ocs_ci.framework.testlib import (
     tier1,
     tier2,
     tier4c,
+    bugzilla,
 )
 from ocs_ci.ocs.bucket_utils import (
     sync_object_directory,
@@ -1022,17 +1023,35 @@ class TestNamespace(MCGTest):
             amount=3,
         )
 
-    @pytest.mark.polarion_id("OCS-2293")
-    @tier2
+    @pytest.mark.parametrize(
+        argnames="uls_provider",
+        argvalues=[
+            pytest.param(
+                "aws",
+                marks=[tier2, pytest.mark.polarion_id("OCS-2293")],
+            ),
+            pytest.param(
+                "azure",
+                marks=[
+                    tier2,
+                    bugzilla("2165493"),
+                ],
+            ),
+        ],
+        ids=[
+            "AWS",
+            "AZURE",
+        ],
+    )
     def test_namespace_bucket_creation_with_many_resources_crd(
-        self, namespace_store_factory, bucket_factory
+        self, namespace_store_factory, bucket_factory, uls_provider
     ):
         """
         Test namespace bucket creation using the CRD.
         Use 100+ read resources.
         """
         logger.info("Create namespace resources and verify health")
-        nss_tup = ("oc", {"aws": [(100, self.DEFAULT_REGION)]})
+        nss_tup = ("oc", {uls_provider: [(100, self.DEFAULT_REGION)]})
         ns_resources = namespace_store_factory(*nss_tup)
 
         logger.info("Create the namespace bucket with many namespace resources")
