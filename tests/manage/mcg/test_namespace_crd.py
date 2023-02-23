@@ -1069,6 +1069,37 @@ class TestNamespace(MCGTest):
             bucketclass=bucketclass_dict,
         )
 
+    @pytest.mark.parametrize(
+        argnames="uls_provider",
+        argvalues=[
+            pytest.param(
+                "aws",
+                marks=[tier2, pytest.mark.polarion_id("OCS-2293")],
+            ),
+            pytest.param(
+                "azure",
+                marks=[
+                    tier2,
+                    bugzilla("2165493"),
+                ],
+            ),
+        ],
+        ids=[
+            "AWS",
+            "AZURE",
+        ],
+    )
+    def test_create_many_backingstores(
+        self, backingstore_factory, uls_provider, mcg_obj
+    ):
+        backingstores = backingstore_factory(
+            "oc", {uls_provider: [(101, self.DEFAULT_REGION)]}
+        )
+        for backingstore in backingstores:
+            assert mcg_obj.check_backingstore_state(
+                backingstore.name, constants.BS_OPTIMAL
+            )
+
     @pytest.mark.polarion_id("OCS-2325")
     @tier2
     def test_block_read_resource_in_namespace_bucket_crd(
