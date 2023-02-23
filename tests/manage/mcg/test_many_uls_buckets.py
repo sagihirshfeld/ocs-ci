@@ -64,7 +64,7 @@ class TestManyUlSBuckets:
         for i in 100:
             logger.info(f"Creating Namespacestore {i + 1} / {self.MANY_BUCKETS_NUM}")
             namespacestore = namespacestore_factory(
-                "cli", {uls_provider: [(1, self.DEFAULT_REGION)]}
+                "oc", {uls_provider: [(1, self.DEFAULT_REGION)]}
             )[0]
             assert (
                 namespacestore.verify_health()
