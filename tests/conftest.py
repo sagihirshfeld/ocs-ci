@@ -2080,7 +2080,7 @@ def ec2_instances(request, aws_obj):
 
 
 @pytest.fixture(scope="session")
-def cld_mgr(request, rgw_endpoint):
+def cld_mgr(request):
     """
     Returns a cloud manager instance that'll be used throughout the session
 
