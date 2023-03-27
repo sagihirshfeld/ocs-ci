@@ -142,6 +142,7 @@ class TestBucketIO(MCGTest):
     def test_write_file_to_bucket(
         self,
         mcg_obj,
+        mcg_obj_session,
         awscli_pod_session,
         bucket_class_factory,
         bucket_factory,
