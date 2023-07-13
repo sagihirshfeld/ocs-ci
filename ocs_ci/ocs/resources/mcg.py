@@ -1016,3 +1016,15 @@ class MCG:
             == get_default_bc["status"]["phase"]
             == STATUS_READY
         )
+
+    def reset_core_pod(self):
+        """
+        Delete the noobaa-core pod and wait for it to come up again
+
+        """
+
+        self.core_pod.delete(wait=True)
+        self.core_pod = Pod(
+            **get_pods_having_label(constants.NOOBAA_CORE_POD_LABEL, self.namespace)[0]
+        )
+        wait_for_resource_state(self.core_pod, constants.STATUS_RUNNING)
