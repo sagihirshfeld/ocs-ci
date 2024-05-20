@@ -11,7 +11,7 @@ from ocs_ci.ocs.resources.mcg_bucket_replication.policy import (
 )
 
 
-class AzureHandler(LbrHandler):
+class AzureLbrHandler(LbrHandler):
     """
     A class for handling log-based replication between MCG buckets,
     when the source bucket is using an Azure Namespacestore.

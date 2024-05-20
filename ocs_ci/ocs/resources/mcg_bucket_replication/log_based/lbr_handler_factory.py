@@ -2,6 +2,9 @@ from ocs_ci.ocs import constants
 from ocs_ci.ocs.resources.mcg_bucket_replication.log_based.aws_handler import (
     AwsLbrHandler,
 )
+from ocs_ci.ocs.resources.mcg_bucket_replication.log_based.azure_handler import (
+    AzureLbrHandler,
+)
 
 
 class LbrHandlerFactory:
@@ -27,15 +30,18 @@ class LbrHandlerFactory:
         Returns:
             LbrHandler: An instance of a log-based replication handler.
         """
-
         if platform == constants.AWS_PLATFORM:
-            return AwsLbrHandler(
-                self.mcg_obj,
-                self.bucket_factory,
-                self.awscli_pod,
-                patch_to_existing_bucket,
-            )
+            handler_class = AwsLbrHandler
         elif platform == constants.AZURE_PLATFORM:
+            handler_class = AzureLbrHandler
+        else:
             raise NotImplementedError(
-                "Azure log-based replication is not yet supported."
+                f"log-based replication is not yet supported for platform {platform}"
             )
+
+        return handler_class(
+            self.mcg_obj,
+            self.bucket_factory,
+            self.awscli_pod,
+            patch_to_existing_bucket,
+        )
