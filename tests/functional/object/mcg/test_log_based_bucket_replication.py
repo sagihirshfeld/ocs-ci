@@ -170,15 +170,20 @@ class TestLogBasedBucketReplication(MCGTest):
         ), "Replication has completed for the wrong prefix"
 
         # 6. Copy the objects that were not deleted to the same prefix on the target bucket
-        cp_cmd = f"cp s3://{replication_handler.source_bucket}/other_prefix"
-        cp_cmd += f" s3://{replication_handler.target_bucket}/synced_prefix --recursive"
-        replication_handler.awscli_pod.exec_cmd_on_pod(craft_s3_command(cp_cmd))
+        cp_cmd = f"cp s3://{replication_handler.source_bucket.name}/other_prefix"
+        cp_cmd += (
+            f" s3://{replication_handler.target_bucket.name}/other_prefix --recursive"
+        )
+        replication_handler.awscli_pod.exec_cmd_on_pod(
+            command=craft_s3_command(cp_cmd, replication_handler.mcg_obj),
+            out_yaml_format=False,
+        )
 
         # 7. Delete all the objects on both prefixes from the source bucket
         replication_handler.delete_recursively_from_source()
 
         # 8. Wait for the objects with the prefix to be deleted
-        # form the target bucket
+        # from the target bucket
         assert replication_handler.wait_for_sync(
             timeout=self.DEFAULT_TIMEOUT, prefix="synced_prefix"
         ), f"Deletion sync failed to complete in {self.DEFAULT_TIMEOUT} seconds"
