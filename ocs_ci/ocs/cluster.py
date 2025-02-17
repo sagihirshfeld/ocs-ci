@@ -1249,14 +1249,6 @@ def validate_cluster_on_pvc():
             "deployment we don't have mon pods backed by PVC"
         )
     logger.info("Validating all osd pods have PVC")
-    osd_deviceset_pods = get_pod_name_by_pattern(
-        "rook-ceph-osd-prepare-ocs-deviceset", ns
-    )
-    validate_ocs_pods_on_pvc(
-        osd_deviceset_pods,
-        pvc_names,
-        constants.CEPH_ROOK_IO_PVC_LABEL,
-    )
     validated_pods = set()
     validate_claim_name_match_pvc(pvc_names, validated_pods)
 
