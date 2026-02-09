@@ -133,6 +133,7 @@ class Warp(object):
         insecure=False,
         debug=False,
         workload_type="put",
+        clear_objects=False,
         kwargs=None,
     ):
         """
@@ -166,6 +167,7 @@ class Warp(object):
         self.duration = duration if duration else self.duration["duration"]
         self.concurrent = concurrent if concurrent else self.concurrent["concurrent"]
         self.obj_size = obj_size if obj_size else self.obj_size["obj.size"]
+
         base_options = "".join(
             f"--duration={self.duration} "
             f"--host={self.host} "
@@ -174,10 +176,11 @@ class Warp(object):
             f"--debug={debug} "
             f"--access-key={self.access_key} "
             f"--secret-key={self.secret_key} "
-            f"--noclear --noprefix --concurrent={self.concurrent} "
+            f"--noprefix --concurrent={self.concurrent} "
             f"--obj.size={self.obj_size} "
             f"--bucket={self.bucket_name} "
             f"--analyze.out={self.output_file} "
+            f"{'--noclear ' if not clear_objects else ''}"
         )
 
         # Setup warp clients on warp client pods
@@ -264,6 +267,31 @@ class Warp(object):
             log.warning(f"Failed to get last report: {e}")
             return None
 
+    def get_last_avg_throughput(self):
+        """
+        Get the last average throughput from the warp workload runner
+
+        Returns:
+            float: The last average throughput from the warp workload runner
+
+        Raise:
+            UnexpectedBehaviour: if last report is empty.
+        """
+        last_report = self.get_last_report()
+
+        if last_report is None:
+            raise UnexpectedBehaviour(
+                f"Last report is empty, Warp workload didn't run as expected..."
+            )
+
+        avg_throughput = (
+            pd.to_numeric(last_report["mb_per_sec"], errors="coerce")
+            .fillna(0)
+            .astype(float)
+            .mean()
+        )
+        return avg_throughput
+
 
 class WarpWorkloadRunner:
     """
@@ -348,19 +376,45 @@ class WarpWorkloadRunner:
         self.thread.start()
         log.info("Warp workload thread started")
 
-    def stop(self):
-        """Stop the warp workload"""
+    def stop(self, timeout=300):
+        """
+        Stop the warp workload
+
+        Args:
+            timeout (int): Timeout for the stop operation (default: 300 seconds)
+        """
         if not self.stop_event:
             log.warning("Stop event is not set, cannot stop warp workload")
             return
 
-        if self.thread and self.thread.is_alive():
-            self.stop_event.set()
-
-            self.thread.join(timeout=120)
-            if self.thread.is_alive():
-                log.error("Warp workload thread is still alive after join")
-
-            log.info("Warp workload thread stopped")
-        else:
+        if not self.thread or not self.thread.is_alive():
             log.warning("Warp workload thread is not running")
+            return
+
+        log.info("Stopping warp workload thread...")
+        self.stop_event.set()
+        check_interval = 30  # Check every 30 seconds
+        start_time = time.time()
+
+        while self.thread.is_alive():
+            self.thread.join(timeout=check_interval)
+            elapsed = int(time.time() - start_time)
+
+            if self.thread.is_alive():
+                if elapsed >= timeout:
+                    log.error(
+                        f"Warp workload thread did not stop within {timeout}s. "
+                        f"Thread may not have stopped cleanly. Giving up after {elapsed}s."
+                    )
+                    break
+                log.warning(
+                    f"Warp workload thread still alive after {elapsed}s, "
+                    f"continuing to wait (max: {timeout}s)"
+                )
+
+        if self.thread.is_alive():
+            log.error("Warp workload thread is still running after stop attempt")
+        else:
+            log.info(
+                f"Warp workload thread stopped successfully after {int(time.time() - start_time)}s"
+            )

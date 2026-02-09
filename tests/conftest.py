@@ -11623,14 +11623,18 @@ def enable_custom_metrics(request):
 @pytest.fixture(scope="function")
 def pushgateway(request, project_factory, enable_custom_metrics):
     """
-    TODO
+    Install Pushgateway in a new project and return the Pushgateway object.
+
+
     """
     return pushgateway_fixture(request, project_factory)
 
 
 def pushgateway_fixture(request, project_factory):
     """
-    TODO
+    Install Pushgateway in a new project and return the Pushgateway object.
+
+    Pushgateway is a 3rd party tool that allows pushing custom metrics to Prometheus.
     """
     project_obj = project_factory(
         project_name=create_unique_resource_name("pushgateway", "project")
