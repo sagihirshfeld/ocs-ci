@@ -367,6 +367,7 @@ class WarpWorkloadRunner:
                         insecure=True,
                         validate=False,
                         multi_client=False,
+                        clear_objects=True,
                     )
                 except Exception as e:
                     log.warning(f"Warp workload iteration failed: {e}")

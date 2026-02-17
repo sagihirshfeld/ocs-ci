@@ -14,6 +14,7 @@ from ocs_ci.ocs.resources.pod import Pod, get_pods_having_label
 from ocs_ci.utility import templating
 from ocs_ci.utility.utils import exec_cmd
 from ocs_ci.ocs.ocp import OCP
+from ocs_ci.ocs.resources.ocs import OCS
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ class KEDA:
                 sleep(10)
                 OCP().exec_oc_cmd(
                     (
-                        "oc wait --for=condition=Established "
+                        "wait --for=condition=Established "
                         "crds -l app.kubernetes.io/part-of=keda-operator"
                     )
                 )
@@ -275,6 +276,7 @@ class KEDA:
         Returns:
             ScaledObject: Existing ScaledObject instance if found, None otherwise
         """
+
         ocp_obj = OCP(
             kind=constants.SCALED_OBJECT,
             namespace=config_dict.get("namespace", self.workload_namespace),
@@ -290,15 +292,8 @@ class KEDA:
                 if so_target.get("name") == target_ref.get("name") and so_target.get(
                     "kind"
                 ) == target_ref.get("kind"):
-                    # Reconstruct ScaledObject from existing data
-                    existing_obj = ScaledObject.__new__(ScaledObject)
-                    existing_obj.data = so
-                    existing_obj.name = so["metadata"]["name"]
-                    existing_obj.ocp_obj = OCP(
-                        kind=constants.SCALED_OBJECT,
-                        namespace=so["metadata"]["namespace"],
-                        resource_name=existing_obj.name,
-                    )
+                    # Reconstruct ScaledObject from existing data using Prototype pattern
+                    existing_obj = ScaledObject.from_existing(so)
                     logger.info(f"Found existing ScaledObject: {existing_obj.name}")
                     return existing_obj
         except Exception as e:
@@ -338,7 +333,6 @@ class KEDA:
             logger.info(
                 f"ScaledObject {existing_scaled_obj.name} already exists, updating..."
             )
-            # Update existing object using the built-in update_from_dict method
             existing_scaled_obj.update_from_dict(config_dict)
             scaled_obj = existing_scaled_obj
         else:
@@ -447,7 +441,7 @@ class ScaledObject:
         """
         self._validate_config_dict(config_dict)
 
-        self.ocp_obj = None
+        self.ocs_obj = None
 
         self.data = templating.load_yaml(constants.KEDA_SCALED_OBJECT_YAML)
         self.name = create_unique_resource_name("keda-scaled-object", "scaledobject")
@@ -457,11 +451,38 @@ class ScaledObject:
             if key in config_dict:
                 self._update_yaml_path(path, config_dict[key], apply=False)
 
-        self.ocp_obj = create_resource(**self.data)
+        self.ocs_obj = create_resource(**self.data)
+        self.namespace = self.ocs_obj.namespace
+
+    @classmethod
+    def from_existing(cls, resource_data):
+        """
+        Create a ScaledObject instance from existing resource data.
+
+        Implements the Prototype design pattern: creates a new instance by
+        cloning from existing Kubernetes resource data.
+
+        Args:
+            resource_data (dict): The existing ScaledObject resource data from Kubernetes
+
+        Returns:
+            ScaledObject: A new ScaledObject instance cloned from the prototype
+        """
+        instance = cls.__new__(cls)
+        instance.data = resource_data
+        instance.name = resource_data["metadata"]["name"]
+        instance.namespace = resource_data["metadata"]["namespace"]
+        ocp_obj = OCP(
+            namespace=instance.namespace,
+            resource_name=instance.name,
+            kind=constants.SCALED_OBJECT,
+        )
+        instance.ocs_obj = OCS(**ocp_obj.get())
+        return instance
 
     @property
     def is_created(self):
-        return self.ocp_obj is not None
+        return self.ocs_obj is not None
 
     def _validate_config_dict(self, config_dict):
         """
@@ -500,7 +521,7 @@ class ScaledObject:
             raise KeyError(f"Path {path} not found in data")
 
         if self.is_created and apply:
-            self.ocp_obj.apply(**self.data)
+            self.ocs_obj.apply(**self.data)
 
         return self
 
@@ -515,7 +536,12 @@ class ScaledObject:
             ValueError: If the config_dict is invalid.
         """
         self._validate_config_dict(config_dict)
+
         for key, value in config_dict.items():
             self._update_yaml_path(self.KEYS_TO_YAML_PATH[key], value, apply=False)
 
-        self.ocp_obj.apply(**self.data)
+        self.ocs_obj.apply(**self.data)
+
+        # Keep self.data fully updated
+        self.ocs_obj.reload()
+        self.data = self.ocs_obj.get()
