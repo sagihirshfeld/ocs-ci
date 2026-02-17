@@ -11625,17 +11625,16 @@ def pushgateway(request, project_factory, enable_custom_metrics):
     """
     Install Pushgateway in a new project and return the Pushgateway object.
 
+    Pushgateway is a 3rd party tool that allows pushing custom metrics to Prometheus.
 
+    The enable_custom_metrics fixture is required to allow Pushgateway
+    to push custom metrics to Prometheus.
     """
     return pushgateway_fixture(request, project_factory)
 
 
 def pushgateway_fixture(request, project_factory):
-    """
-    Install Pushgateway in a new project and return the Pushgateway object.
-
-    Pushgateway is a 3rd party tool that allows pushing custom metrics to Prometheus.
-    """
+    """Install Pushgateway in a new project and return the Pushgateway object"""
     project_obj = project_factory(
         project_name=create_unique_resource_name("pushgateway", "project")
     )

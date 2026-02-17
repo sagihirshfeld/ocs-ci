@@ -155,6 +155,7 @@ class Warp(object):
             insecure (Boolean): disable TLS certification verification
             debug (Boolean): Enable debug output
             workload_type (str): Type of workload to run (put, get, stat, mixed, etc.)
+            clear_objects (Boolean): Whether to delete objects from the bucket after the benchmark
             kwargs (dict): Additional keyword arguments to pass to the warp command
         """
 
@@ -281,7 +282,7 @@ class Warp(object):
 
         if last_report is None:
             raise UnexpectedBehaviour(
-                f"Last report is empty, Warp workload didn't run as expected..."
+                "Last report is empty, Warp workload didn't run as expected..."
             )
 
         avg_throughput = (

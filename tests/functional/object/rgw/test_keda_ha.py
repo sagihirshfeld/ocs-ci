@@ -225,9 +225,9 @@ class TestKedaHA:
         THRESHOLD = "5.0"
         METRIC_NAME = "custom_rgw_boundary_metric"
         EXPORTED_JOB_NAME = "rgw_boundary_test"
-        VALUE_ABOVE_THRESHOLD = "20.0"  # High value to trigger scaling
+        VALUE_ABOVE_THRESHOLD = "20.0"
         VALUE_BELOW_THRESHOLD = "1.0"
-        MONITORING_DURATION = 120  # 2 minutes
+        MONITORING_DURATION = 120
 
         # 1. Create a ScaledObject with initial min=1, max=5
         scaled_object = keda_class.create_thanos_metric_scaled_object(
@@ -245,7 +245,7 @@ class TestKedaHA:
             METRIC_NAME, VALUE_BELOW_THRESHOLD, EXPORTED_JOB_NAME
         )
         logger.info(
-            f"Pushed low metric value ({VALUE_BELOW_THRESHOLD}) to trigger scale-up attempt"
+            f"Pushed low metric value ({VALUE_BELOW_THRESHOLD}) to trigger scale-up attempt. "
             f"Waiting a bit to see if RGW scales up when it shouldn't"
         )
         time.sleep(60)
@@ -287,22 +287,22 @@ class TestKedaHA:
         )
 
         try:
-            for rgw_pods in TimeoutSampler(
+            for current_rgw_pods in TimeoutSampler(
                 timeout=MONITORING_DURATION,
                 sleep=5,
                 func=get_pods_having_label,
                 label=constants.RGW_APP_LABEL,
                 namespace=config.ENV_DATA["cluster_namespace"],
             ):
-                if len(rgw_pods) > MAX_REPLICAS:
+                if len(current_rgw_pods) > MAX_REPLICAS:
                     logger.error(
                         f"RGW exceeded maxReplicaCount boundary! "
-                        f"Current: {len(rgw_pods)}, Max: {MAX_REPLICAS}\n"
-                        f"RGW pods:\n{rgw_pods}"
+                        f"Current: {len(current_rgw_pods)}, Max: {MAX_REPLICAS}\n"
+                        f"RGW pods:\n{current_rgw_pods}"
                     )
                     raise AssertionError(
                         f"RGW scaled beyond maxReplicaCount boundary: "
-                        f"{len(rgw_pods)} > {MAX_REPLICAS}"
+                        f"{len(current_rgw_pods)} > {MAX_REPLICAS}"
                     )
         except TimeoutExpiredError:
             logger.info(
@@ -346,6 +346,7 @@ class TestKedaHA:
         request.addfinalizer(finalizer)
 
     @tier3
+    @polarion_id("OCS-7520")
     def test_manual_upscale_performance(
         self, rgw_bucket_factory, warp_multi_client, cleanup_manual_upscale
     ):
@@ -357,13 +358,17 @@ class TestKedaHA:
         3. Re-run the Warp benchmark and verify throughput improvement after upscale
         """
 
+        # Warp benchmark constants
         WARP_DURATION = "1m"
-
         WARP_OBJ_SIZE = "512KiB"
         WARP_CONCURRENCY = 32
+        WARP_TIMEOUT = 600
 
+        # Manual upscale constants
         MANUAL_UPSCALE_REPLICAS = 3
         MANUAL_UPSCALE_TIMEOUT = 300
+        UPSCALE_WAIT_TIME = 60
+
         initial_throughput = None
         final_throughput = None
 
@@ -380,7 +385,7 @@ class TestKedaHA:
             duration=WARP_DURATION,
             concurrent=WARP_CONCURRENCY,
             obj_size=WARP_OBJ_SIZE,
-            timeout=600,
+            timeout=WARP_TIMEOUT,
             tls=True,
             insecure=True,
             multi_client=True,
@@ -414,7 +419,7 @@ class TestKedaHA:
         logger.info(
             "Waiting a bit more to ensure RGW's pods are properly initialized after the upscale"
         )
-        time.sleep(60)
+        time.sleep(UPSCALE_WAIT_TIME)
 
         # 3. Re-run the Warp benchmark and verify throughput improvement after upscale
         warp_multi_client.run_benchmark(
@@ -425,7 +430,7 @@ class TestKedaHA:
             duration=WARP_DURATION,
             concurrent=WARP_CONCURRENCY,
             obj_size=WARP_OBJ_SIZE,
-            timeout=600,
+            timeout=WARP_TIMEOUT,
             tls=True,
             insecure=True,
             multi_client=True,
