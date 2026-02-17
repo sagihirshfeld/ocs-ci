@@ -232,7 +232,7 @@ class Warp(object):
         else:
             raise UnexpectedBehaviour(
                 f"Output file {self.output_file} is empty, "
-                "Warp workload doesn't run as expected..."
+                "Warp workload didn't run as expected..."
             )
 
     def cleanup(self, multi_client=False):

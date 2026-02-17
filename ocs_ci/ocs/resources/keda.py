@@ -265,11 +265,55 @@ class KEDA:
             )
             return False
 
+    def _find_existing_scaled_object(self, config_dict):
+        """
+        Find existing ScaledObject managing the same workload.
+
+        Args:
+            config_dict (dict): Configuration containing scaleTargetRef
+
+        Returns:
+            ScaledObject: Existing ScaledObject instance if found, None otherwise
+        """
+        ocp_obj = OCP(
+            kind=constants.SCALED_OBJECT,
+            namespace=config_dict.get("namespace", self.workload_namespace),
+        )
+
+        try:
+            scaled_objects = ocp_obj.get()["items"]
+            target_ref = config_dict.get("scaleTargetRef", {})
+
+            for so in scaled_objects:
+                so_target = so["spec"].get("scaleTargetRef", {})
+                # Match by target name and kind
+                if so_target.get("name") == target_ref.get("name") and so_target.get(
+                    "kind"
+                ) == target_ref.get("kind"):
+                    # Reconstruct ScaledObject from existing data
+                    existing_obj = ScaledObject.__new__(ScaledObject)
+                    existing_obj.data = so
+                    existing_obj.name = so["metadata"]["name"]
+                    existing_obj.ocp_obj = OCP(
+                        kind=constants.SCALED_OBJECT,
+                        namespace=so["metadata"]["namespace"],
+                        resource_name=existing_obj.name,
+                    )
+                    logger.info(f"Found existing ScaledObject: {existing_obj.name}")
+                    return existing_obj
+        except Exception as e:
+            logger.debug(f"No existing ScaledObject found: {e}")
+
+        return None
+
     def create_thanos_metric_scaled_object(self, config_dict):
         """
-        Create and register a KEDA ScaledObject driven by a Thanos metric.
+        Create or update a KEDA ScaledObject driven by a Thanos metric.
         A ScaledObject defines how KEDA should scale a workload: which target
         to scale, what metric to watch, and the conditions that trigger scaling.
+
+        If a ScaledObject already exists for the same workload, it will be updated
+        instead of creating a new one, making this method idempotent.
 
         Args:
             config_dict (dict): A dictionary containing the configuration for the ScaledObject.
@@ -277,7 +321,9 @@ class KEDA:
         Returns:
             ScaledObject: The configured ScaledObject instance.
         """
-        logger.info(f"Creating ScaledObject according to config: {config_dict}")
+        logger.info(
+            f"Creating/updating ScaledObject according to config: {config_dict}"
+        )
 
         config_dict.setdefault("namespace", self.workload_namespace)
         config_dict.setdefault(
@@ -285,15 +331,27 @@ class KEDA:
         )
         config_dict.setdefault("authenticationRef", self.ta_name)
 
-        scaled_obj = ScaledObject(config_dict)
+        # Check if ScaledObject already exists for this workload
+        existing_scaled_obj = self._find_existing_scaled_object(config_dict)
 
-        # Label the scaled object for easy cleanup
+        if existing_scaled_obj:
+            logger.info(
+                f"ScaledObject {existing_scaled_obj.name} already exists, updating..."
+            )
+            # Update existing object using the built-in update_from_dict method
+            existing_scaled_obj.update_from_dict(config_dict)
+            scaled_obj = existing_scaled_obj
+        else:
+            logger.info("Creating new ScaledObject...")
+            scaled_obj = ScaledObject(config_dict)
+
+        # Ensure cleanup label is present (use --overwrite for existing objects)
         ocp_obj = OCP(namespace=self.workload_namespace)
         ocp_obj.exec_oc_cmd(
-            f"label {constants.SCALED_OBJECT}/{scaled_obj.name} {self.cleanup_label}"
+            f"label {constants.SCALED_OBJECT}/{scaled_obj.name} {self.cleanup_label} --overwrite"
         )
 
-        logger.info(f"ScaledObject created: {scaled_obj.name}")
+        logger.info(f"ScaledObject ready: {scaled_obj.name}")
         return scaled_obj
 
     def cleanup(self):
