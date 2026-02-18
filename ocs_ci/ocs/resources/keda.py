@@ -166,7 +166,6 @@ class KEDA:
         resources_to_cleanup.append(f"{constants.SECRET}/{self.token_secret_name}")
 
         # Extract the cluster CA bundle so KEDA can verify Thanos TLS
-        # TODO: This currently leaves a leftover we need to cleanup at teardown
         self.ca_data = OCP(namespace="openshift-monitoring").exec_oc_cmd(
             "get configmap serving-certs-ca-bundle -o jsonpath='{.data.service-ca\\.crt}'",
             out_yaml_format=False,
@@ -469,15 +468,19 @@ class ScaledObject:
             ScaledObject: A new ScaledObject instance cloned from the prototype
         """
         instance = cls.__new__(cls)
-        instance.data = resource_data
         instance.name = resource_data["metadata"]["name"]
         instance.namespace = resource_data["metadata"]["namespace"]
-        ocp_obj = OCP(
-            namespace=instance.namespace,
-            resource_name=instance.name,
-            kind=constants.SCALED_OBJECT,
-        )
-        instance.ocs_obj = OCS(**ocp_obj.get())
+
+        # Filter out the the rest of the metadata and the status fields
+        # these can cause a Conflict error when applying the changes
+        resource_data["metadata"] = {
+            "name": resource_data["metadata"]["name"],
+            "namespace": resource_data["metadata"]["namespace"],
+        }
+        resource_data["status"] = {}
+
+        instance.data = resource_data
+        instance.ocs_obj = OCS(**resource_data)
         return instance
 
     @property
@@ -541,7 +544,3 @@ class ScaledObject:
             self._update_yaml_path(self.KEYS_TO_YAML_PATH[key], value, apply=False)
 
         self.ocs_obj.apply(**self.data)
-
-        # Keep self.data fully updated
-        self.ocs_obj.reload()
-        self.data = self.ocs_obj.get()

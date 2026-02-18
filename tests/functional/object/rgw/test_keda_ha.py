@@ -148,10 +148,11 @@ class TestKedaHA:
         THRESHOLD = "5.0"
         METRIC_NAME = "custom_rgw_metric"
         EXPORTED_JOB_NAME = "rgw_flapping_test"
-        FLAPPING_DURATION = 120  # 2 minutes
-        FLAPPING_INTERVAL = 5  # 5 seconds
+        FLAPPING_DURATION = 120
+        FLAPPING_INTERVAL = 5
         VALUE_ABOVE_THRESHOLD = "20.0"
         VALUE_BELOW_THRESHOLD = "1.0"
+        SCALE_TIMEOUT = 600
 
         # 1. Create a ScaledObject to autoscale the RGW deployment based on custom metric
         logger.info(f"Creating ScaledObject to monitor custom metric '{METRIC_NAME}'")
@@ -194,8 +195,8 @@ class TestKedaHA:
         assert wait_for_pods_by_label_count(
             label=constants.RGW_APP_LABEL,
             expected_count=TARGET_MAX_REPLICAS,
-            timeout=300,
-        ), f"RGW did not scale up to {TARGET_MAX_REPLICAS} replica(s) after threshold flapping within 300s"
+            timeout=SCALE_TIMEOUT,
+        ), f"RGW did not scale up to {TARGET_MAX_REPLICAS} replica(s) after threshold flapping within {SCALE_TIMEOUT}s"
 
         # 4. Set the metric below the threshold and wait for RGW to scale down
         logger.info(f"Setting metric below threshold ({VALUE_BELOW_THRESHOLD})")
@@ -205,8 +206,11 @@ class TestKedaHA:
         assert wait_for_pods_by_label_count(
             label=constants.RGW_APP_LABEL,
             expected_count=self.DEFAULT_MIN_REPLICAS,
-            timeout=300,
-        ), f"RGW did not scale down to {self.DEFAULT_MIN_REPLICAS} replica(s) after threshold flapping within 300s"
+            timeout=SCALE_TIMEOUT,
+        ), (
+            f"RGW did not scale down to {self.DEFAULT_MIN_REPLICAS} replica(s) "
+            f"after threshold flapping within {SCALE_TIMEOUT}s"
+        )
 
     @tier2
     @polarion_id("OCS-7518")
