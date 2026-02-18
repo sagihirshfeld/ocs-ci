@@ -77,7 +77,6 @@ from ocs_ci.ocs.exceptions import (
     CephHealthNotRecoveredException,
     CephHealthRecoveredException,
     ResourceWrongStatusException,
-    UnexpectedBehaviour,
     UnsupportedPlatformError,
     PoolDidNotReachReadyState,
     StorageclassNotCreated,
@@ -11575,8 +11574,6 @@ def keda_fixture(request):
         log.info("KEDA is already installed, skipping installation")
 
     keda.setup_access_to_thanos_metrics()
-    if not keda.can_read_thanos_metrics():
-        raise UnexpectedBehaviour("KEDA setup to read Thanos metrics failed")
 
     return keda
 

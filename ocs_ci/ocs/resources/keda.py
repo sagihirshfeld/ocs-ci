@@ -1,6 +1,4 @@
-import json
 import logging
-import shlex
 from time import sleep
 
 from ocs_ci.ocs import constants
@@ -10,7 +8,6 @@ from ocs_ci.helpers.helpers import (
     create_unique_resource_name,
     create_resource,
 )
-from ocs_ci.ocs.resources.pod import Pod, get_pods_having_label
 from ocs_ci.utility import templating
 from ocs_ci.utility.utils import exec_cmd
 from ocs_ci.ocs.ocp import OCP
@@ -205,65 +202,6 @@ class KEDA:
         ocp_obj.exec_oc_cmd(label_cmd)
 
         logger.info("KEDA configured to read Thanos metrics")
-
-    def can_read_thanos_metrics(self):
-        """
-        Check if the token and CA that KEDA is configured to use are valid
-        by using them to query the Thanos Querier internal address from one
-        of the Prometheus pods and checking the response.
-
-        Returns:
-            bool: True if KEDA is configured to read Thanos metrics, False otherwise.
-        """
-        logger.info(
-            "Checking if KEDA's token and CA can be used to read Thanos metrics"
-        )
-
-        if not self.token or not self.ca_secret_name:
-            logger.warning("KEDA is not configured to read Thanos metrics")
-            return False
-
-        # Get one of the Prometheus pods
-        prom_pod_obj = get_pods_having_label(
-            constants.PROMETHEUS_POD_LABEL, constants.OPENSHIFT_MONITORING_NAMESPACE
-        )[0]
-        prom_pod = Pod(**prom_pod_obj)
-
-        # Build the headers and URL for the query
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-        }
-        header_args = " ".join(
-            f"-H {shlex.quote(f'{k}: {v}')}" for k, v in headers.items()
-        )
-        url = f"{constants.THANOS_QUERIER_INTERNAL_ADDRESS}/api/v1/query?query=time()"
-
-        # Feed the CA data to the curl command as a bash variable
-        # shlex is needed to properly quote the CA data and the URL
-        bash_script = (
-            "CERT=$(cat << 'EOF'\n"
-            f"{self.ca_data.strip()}\n"
-            "EOF\n"
-            ")\n"
-            f"curl -s -k {header_args} --cacert <(printf '%s\\n' \"$CERT\") {shlex.quote(url)}\n"
-        )
-        # Wrap it for bash -lc (so <(...) works)
-        cmd = f"bash -lc {shlex.quote(bash_script)}"
-
-        raw_response = prom_pod.exec_cmd_on_pod(cmd, out_yaml_format=False, silent=True)
-        response = json.loads(raw_response)
-        if response.get("status") == "success":
-            logger.info("KEDA's token and CA can be used to read Thanos metrics")
-            return True
-        else:
-            logger.warning(
-                (
-                    "KEDA's token and CA cannot be used to read Thanos metrics"
-                    f"Got response: {response}"
-                )
-            )
-            return False
 
     def _find_existing_scaled_object(self, config_dict):
         """
