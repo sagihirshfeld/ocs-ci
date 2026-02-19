@@ -127,8 +127,6 @@ class TestSecondaryDbOptimization(MCGTest):
         2. Verify that in the noobaa-core logs that the expected queries were sent to the secondary DB
         3. Verify that the secondary DB pod is receiving the expected queries
         """
-        WAIT_TIME = 90  # seconds
-
         EXPECTED_QUERIES_TO_KEYWORDS = {
             "DB Cleaner": ["datablocks", "deleted"],
             "Object Reclaimer": ["objectmds", "reclaimed"],
