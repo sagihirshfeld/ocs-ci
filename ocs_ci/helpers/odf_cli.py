@@ -326,6 +326,8 @@ class ODFCliRunner:
             noobaa_cmd = " ".join(["noobaa"] + command_args)
 
         ns = namespace or config.ENV_DATA["cluster_namespace"]
+        # -n is required on both the odf binary (to avoid defaulting to
+        # openshift-storage) and the noobaa subcommand itself.
         noobaa_cmd += f" -n {ns}"
         full_command = f"{self.binary_name} -n {ns} {noobaa_cmd}"
 
