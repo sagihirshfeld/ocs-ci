@@ -195,6 +195,7 @@ class TestNooBaaEndpointKeda(MCGTest):
         host = f"s3.{namespace}.svc:443"
         return WarpWorkloadRunner(request, host)
 
+    @pytest.mark.polarion_id("OCS-8062")
     def test_noobaa_endpoint_keda_autoscaling(
         self,
         setup_keda_autoscaling,
