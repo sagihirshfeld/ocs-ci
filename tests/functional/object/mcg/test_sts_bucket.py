@@ -39,7 +39,7 @@ class TestSTSBucket:
                         "backingstore_dict": {"aws-sts": [(1, "eu-central-1")]},
                     },
                 ],
-                marks=[tier2, aws_platform_required, polarion_id("OCS-5479")],
+                marks=[tier2, aws_platform_required, polarion_id("OCS-5610")],
             ),
             pytest.param(
                 *[
@@ -64,9 +64,7 @@ class TestSTSBucket:
             ),
             pytest.param(
                 *[None],
-                marks=[
-                    tier1,
-                ],
+                marks=[tier1, polarion_id("OCS-5609")],
             ),
         ],
         ids=[
