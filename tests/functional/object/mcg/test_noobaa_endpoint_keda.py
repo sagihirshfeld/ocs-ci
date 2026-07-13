@@ -1,6 +1,5 @@
 import json
 import logging
-from functools import partial
 
 import pytest
 
@@ -185,8 +184,7 @@ class TestNooBaaEndpointKeda(MCGTest):
         4. Wait for endpoint pods to scale back down to minCount
         """
         namespace = config.ENV_DATA["cluster_namespace"]
-        get_endpoint_pods = partial(
-            get_pods_having_label,
+        endpoint_pods_kwargs = dict(
             label=constants.NOOBAA_ENDPOINT_POD_LABEL,
             namespace=namespace,
             statuses=[constants.STATUS_RUNNING],
@@ -212,7 +210,10 @@ class TestNooBaaEndpointKeda(MCGTest):
         )
         try:
             for endpoint_pods in TimeoutSampler(
-                timeout=300, sleep=30, func=get_endpoint_pods
+                timeout=300,
+                sleep=30,
+                func=get_pods_having_label,
+                **endpoint_pods_kwargs,
             ):
                 count = len(endpoint_pods)
                 pod_names = ", ".join(p["metadata"]["name"] for p in endpoint_pods)
@@ -238,7 +239,10 @@ class TestNooBaaEndpointKeda(MCGTest):
         )
         try:
             for endpoint_pods in TimeoutSampler(
-                timeout=1200, sleep=30, func=get_endpoint_pods
+                timeout=1200,
+                sleep=30,
+                func=get_pods_having_label,
+                **endpoint_pods_kwargs,
             ):
                 count = len(endpoint_pods)
                 logger.debug(f"Endpoint pod count: {count}")
