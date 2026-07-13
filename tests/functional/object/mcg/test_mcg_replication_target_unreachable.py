@@ -594,6 +594,20 @@ class TestMCGReplicationTargetUnreachableAlert(MCGTest):
             threading_lock, source_b.name, target_b.name, timeout=600, sleep=10
         )
 
+        # Verify targetC is still healthy after targetB deletion
+        logger.test_step("Verify no alerts are firing for healthy target (targetC)")
+        alerts = api.get_alerts_by_labels(
+            alert_name=alert_name,
+            labels_dict={"target_bucket": target_c.name},
+        )
+        logger.assertion(
+            f"No alerts for healthy target {target_c.name}: "
+            f"found={len(alerts)}, expected=0"
+        )
+        assert (
+            not alerts
+        ), f"Unexpected alert firing for healthy target {target_c.name}: {alerts}"
+
         # 11. Recreate both underlying MCG buckets with the same names
         logger.test_step("Recreate both underlying MCG buckets")
         mcg_obj.s3_resource.create_bucket(Bucket=underlying_a)
@@ -733,8 +747,8 @@ class TestMCGReplicationTargetUnreachableAlert(MCGTest):
 
         # 5. Restart the noobaa-core pod and wait for it to become ready
         logger.test_step("Restart the noobaa-core pod and wait for it to become ready")
-        get_noobaa_core_pod().delete()
-        logger.info("NooBaa core pod deleted, waiting for it to become ready")
+        get_noobaa_core_pod().delete(wait=True)
+        logger.info("NooBaa core pod terminated, waiting for new pod")
         wait_for_noobaa_pods_running(timeout=300)
         logger.info("NooBaa core pod is ready")
 
