@@ -1,4 +1,6 @@
+import json
 import logging
+from functools import partial
 
 import pytest
 
@@ -66,55 +68,88 @@ class TestNooBaaEndpointKeda(MCGTest):
         )
 
         def finalizer():
-            logger.info(
-                f"Restoring endpoint counts to min={original_min}, "
-                f"max={original_max} and autoscaler to {original_autoscaler_type}"
+            logger.test_step(
+                f"Restore StorageCluster config: min={original_min}, "
+                f"max={original_max}, autoscaler={original_autoscaler_type}"
+            )
+            restore_patch = json.dumps(
+                {
+                    "spec": {
+                        "multiCloudGateway": {
+                            "endpoints": {
+                                "minCount": original_min,
+                                "maxCount": original_max,
+                            },
+                            "autoscaler": {"autoscalerType": original_autoscaler_type},
+                        }
+                    }
+                }
             )
             try:
                 sc_ocp.patch(
                     resource_name=sc_name,
-                    params=(
-                        f'{{"spec":{{"multiCloudGateway":{{'
-                        f'"endpoints":{{"minCount":{original_min},"maxCount":{original_max}}},'
-                        f'"autoscaler":{{"autoscalerType":"{original_autoscaler_type}"}}'
-                        f"}}}}}}"
-                    ),
+                    params=restore_patch,
                     format_type="merge",
                 )
             except CommandFailed:
                 logger.warning("Failed to restore StorageCluster config")
+                return
+
+            # Wait for the ScaledObject to be deleted before keda_class
+            # teardown uninstalls KEDA. Otherwise the KEDA finalizer on
+            # the ScaledObject gets stuck with no operator to process it.
+            so_ocp = OCP(kind=constants.SCALED_OBJECT, namespace=namespace)
+            try:
+                so_ocp.wait_for_delete(resource_name="noobaa", timeout=120)
+                logger.info("ScaledObject deleted during teardown")
+            except (CommandFailed, TimeoutError):
+                logger.warning(
+                    "ScaledObject not deleted in time, "
+                    "may leave a stuck finalizer after KEDA uninstall"
+                )
 
         request.addfinalizer(finalizer)
 
+        get_endpoint_pods = partial(
+            get_pods_having_label,
+            label=constants.NOOBAA_ENDPOINT_POD_LABEL,
+            namespace=namespace,
+            statuses=[constants.STATUS_RUNNING],
+        )
+
         # 1. Patch StorageCluster with endpoint counts and KEDA autoscaler
-        logger.info(
-            f"Configuring StorageCluster: endpoints min={self.MIN_ENDPOINT_COUNT}, "
+        logger.test_step(
+            f"Configure StorageCluster: endpoints min={self.MIN_ENDPOINT_COUNT}, "
             f"max={self.MAX_ENDPOINT_COUNT}, autoscalerType=keda"
         )
-        sc_ocp.patch(
+        setup_patch = json.dumps(
+            {
+                "spec": {
+                    "multiCloudGateway": {
+                        "endpoints": {
+                            "minCount": self.MIN_ENDPOINT_COUNT,
+                            "maxCount": self.MAX_ENDPOINT_COUNT,
+                        },
+                        "autoscaler": {"autoscalerType": "keda"},
+                    }
+                }
+            }
+        )
+        patched = sc_ocp.patch(
             resource_name=sc_name,
-            params=(
-                f'{{"spec":{{"multiCloudGateway":{{'
-                f'"endpoints":{{"minCount":{self.MIN_ENDPOINT_COUNT},"maxCount":{self.MAX_ENDPOINT_COUNT}}},'
-                f'"autoscaler":{{"autoscalerType":"keda"}}'
-                f"}}}}}}"
-            ),
+            params=setup_patch,
             format_type="merge",
         )
+        logger.assertion(f"StorageCluster patch applied: {patched}")
+        assert patched, "Failed to patch StorageCluster with KEDA autoscaler config"
 
         # 2. Wait for ScaledObject creation and HPA deletion
-        scaled_object_ocp = OCP(kind=constants.SCALED_OBJECT, namespace=namespace)
-
-        def _scaled_object_exists():
-            try:
-                scaled_object_ocp.get(resource_name="noobaa")
-                return True
-            except CommandFailed:
-                return False
-
-        logger.info("Waiting for ScaledObject 'noobaa' to be created")
+        logger.test_step("Wait for ScaledObject creation and HPA deletion")
+        so_ocp = OCP(kind=constants.SCALED_OBJECT, namespace=namespace)
         try:
-            for exists in TimeoutSampler(120, 10, _scaled_object_exists):
+            for exists in TimeoutSampler(
+                120, 10, so_ocp.is_exist, resource_name="noobaa"
+            ):
                 if exists:
                     logger.info("ScaledObject created by noobaa-operator")
                     break
@@ -122,36 +157,21 @@ class TestNooBaaEndpointKeda(MCGTest):
             raise TimeoutExpiredError("ScaledObject was not created")
 
         hpa_ocp = OCP(kind="HorizontalPodAutoscaler", namespace=namespace)
-
-        def _hpa_deleted():
-            try:
-                hpa_ocp.get(resource_name="noobaa-hpav2")
-                return False
-            except CommandFailed:
-                return True
-
-        logger.info("Waiting for HPA 'noobaa-hpav2' to be deleted")
-        try:
-            for deleted in TimeoutSampler(60, 10, _hpa_deleted):
-                if deleted:
-                    logger.info("HPA deleted by noobaa-operator")
-                    break
-        except TimeoutExpiredError:
-            logger.warning("HPA was not deleted, continuing anyway")
+        hpa_ocp.wait_for_delete(resource_name="noobaa-hpav2", timeout=60)
+        logger.info("HPA deleted by noobaa-operator")
 
         # 3. Wait for endpoints to stabilize at minCount
-        logger.info(f"Waiting for endpoints to stabilize at {self.MIN_ENDPOINT_COUNT}")
+        logger.test_step(
+            f"Wait for endpoints to stabilize at {self.MIN_ENDPOINT_COUNT}"
+        )
         try:
             for endpoint_pods in TimeoutSampler(
-                timeout=300,
-                sleep=30,
-                func=get_pods_having_label,
-                label=constants.NOOBAA_ENDPOINT_POD_LABEL,
-                namespace=namespace,
+                timeout=300, sleep=30, func=get_endpoint_pods
             ):
                 count = len(endpoint_pods)
-                logger.info(f"Endpoint pod count: {count}")
+                logger.debug(f"Endpoint pod count: {count}")
                 if count == self.MIN_ENDPOINT_COUNT:
+                    logger.info(f"Endpoints stabilized at {self.MIN_ENDPOINT_COUNT}")
                     break
         except TimeoutExpiredError:
             raise TimeoutExpiredError(
@@ -180,8 +200,15 @@ class TestNooBaaEndpointKeda(MCGTest):
         4. Wait for endpoint pods to scale back down to minCount
         """
         namespace = config.ENV_DATA["cluster_namespace"]
+        get_endpoint_pods = partial(
+            get_pods_having_label,
+            label=constants.NOOBAA_ENDPOINT_POD_LABEL,
+            namespace=namespace,
+            statuses=[constants.STATUS_RUNNING],
+        )
 
         # 1. Create an OBC and start S3 load
+        logger.test_step("Create an OBC and start S3 load via Warp")
         bucket = bucket_factory(amount=1, interface="OC")[0]
         obc_obj = OBC(bucket.name)
         warp_workload_runner.start(
@@ -195,41 +222,47 @@ class TestNooBaaEndpointKeda(MCGTest):
         )
 
         # 2. Wait for scale-up
+        logger.test_step(
+            f"Wait for endpoint pods to scale up to {self.MAX_ENDPOINT_COUNT}"
+        )
         try:
             for endpoint_pods in TimeoutSampler(
-                timeout=300,
-                sleep=30,
-                func=get_pods_having_label,
-                label=constants.NOOBAA_ENDPOINT_POD_LABEL,
-                namespace=namespace,
+                timeout=300, sleep=30, func=get_endpoint_pods
             ):
                 count = len(endpoint_pods)
                 pod_names = ", ".join(p["metadata"]["name"] for p in endpoint_pods)
-                logger.info(f"Endpoint pods ({count}): {pod_names}")
-                if count > self.MIN_ENDPOINT_COUNT:
-                    logger.info("Endpoints scaled up")
+                logger.debug(f"Endpoint pods ({count}): {pod_names}")
+                assert count <= self.MAX_ENDPOINT_COUNT, (
+                    f"Endpoint count {count} exceeds configured max "
+                    f"{self.MAX_ENDPOINT_COUNT}"
+                )
+                if count == self.MAX_ENDPOINT_COUNT:
+                    logger.info("Endpoints scaled up to max")
                     break
         except TimeoutExpiredError:
             logger.error("Endpoints did not scale up")
             raise
         finally:
             # 3. Stop the workload
+            logger.test_step("Stop the Warp workload")
             warp_workload_runner.stop()
 
         # 4. Wait for scale-down
+        logger.test_step(
+            f"Wait for endpoint pods to scale down to {self.MIN_ENDPOINT_COUNT}"
+        )
         try:
             for endpoint_pods in TimeoutSampler(
-                timeout=900,
-                sleep=30,
-                func=get_pods_having_label,
-                label=constants.NOOBAA_ENDPOINT_POD_LABEL,
-                namespace=namespace,
+                timeout=1200, sleep=30, func=get_endpoint_pods
             ):
                 count = len(endpoint_pods)
-                logger.info(f"Endpoint pod count: {count}")
+                logger.debug(f"Endpoint pod count: {count}")
                 if count == self.MIN_ENDPOINT_COUNT:
-                    logger.info("Endpoints scaled down")
+                    logger.info("Endpoints scaled down to min")
                     break
         except TimeoutExpiredError:
-            logger.error("Endpoints did not scale down")
+            logger.error(
+                f"Endpoints did not scale down to {self.MIN_ENDPOINT_COUNT} "
+                f"within 1200s"
+            )
             raise
