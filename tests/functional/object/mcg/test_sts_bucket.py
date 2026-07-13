@@ -166,9 +166,8 @@ class TestSTSBucket:
         """
         1. Create 3 STS backingstores via CLI
         2. Create 3 STS namespacestores via CLI
-        3. Create a bucketclass backed by one backingstore and an OBC from it,
-           and a namespace bucketclass backed by one namespacestore and an OBC from it
-        4. Upload objects to both buckets, download, and verify data integrity
+        3. Create a bucketclass and OBC for each backingstore and namespacestore
+        4. Upload objects to all buckets, download, and verify data integrity
         """
         # 1. Create 3 STS backingstores via CLI
         logger.test_step(f"Create 3 {platform} backingstores via CLI")
@@ -178,22 +177,25 @@ class TestSTSBucket:
         logger.test_step(f"Create 3 {platform} namespacestores via CLI")
         namespacestores = namespace_store_factory("cli", {platform: [(3, region)]})
 
-        # 3. Create buckets backed by one BS and one NSS
+        # 3. Create a bucketclass and OBC for each store
         logger.test_step(
-            "Create buckets backed by one backingstore and one namespacestore"
+            "Create a bucketclass and OBC for each backingstore and namespacestore"
         )
         bucketclass_dicts = [
             {
                 "interface": "CLI",
-                "backingstores": [backingstores[0]],
-            },
+                "backingstores": [bs],
+            }
+            for bs in backingstores
+        ] + [
             {
                 "interface": "CLI",
                 "namespace_policy_dict": {
                     "type": "Single",
-                    "namespacestores": [namespacestores[0]],
+                    "namespacestores": [nss],
                 },
-            },
+            }
+            for nss in namespacestores
         ]
         bucketnames = [
             bucket_factory(bucketclass=bc)[0].name for bc in bucketclass_dicts
