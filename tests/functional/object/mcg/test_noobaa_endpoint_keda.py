@@ -93,7 +93,6 @@ class TestNooBaaEndpointKeda(MCGTest):
                 )
             except CommandFailed:
                 logger.warning("Failed to restore StorageCluster config")
-                return
 
             # Wait for the ScaledObject to be deleted before keda_class
             # teardown uninstalls KEDA. Otherwise the KEDA finalizer on
@@ -155,6 +154,17 @@ class TestNooBaaEndpointKeda(MCGTest):
                     break
         except TimeoutExpiredError:
             raise TimeoutExpiredError("ScaledObject was not created")
+
+        so_spec = so_ocp.get(resource_name="noobaa")["spec"]
+        assert so_spec.get("maxReplicaCount") == self.MAX_ENDPOINT_COUNT, (
+            f"ScaledObject maxReplicaCount is {so_spec.get('maxReplicaCount')}, "
+            f"expected {self.MAX_ENDPOINT_COUNT}"
+        )
+        assert so_spec.get("scaleTargetRef", {}).get("name") == "noobaa-endpoint", (
+            f"ScaledObject scaleTargetRef is "
+            f"{so_spec.get('scaleTargetRef', {}).get('name')}, "
+            f"expected noobaa-endpoint"
+        )
 
         hpa_ocp = OCP(kind="HorizontalPodAutoscaler", namespace=namespace)
         hpa_ocp.wait_for_delete(resource_name="noobaa-hpav2", timeout=60)
