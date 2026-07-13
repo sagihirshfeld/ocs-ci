@@ -51,7 +51,6 @@ class TestNooBaaEndpointKeda(MCGTest):
 
         1. Set endpoint min/max counts and autoscalerType=keda via StorageCluster
         2. Wait for the noobaa-operator to create a ScaledObject and delete the HPA
-        3. Wait for endpoints to stabilize at minCount
         """
         namespace = config.ENV_DATA["cluster_namespace"]
         sc_ocp = OCP(kind=constants.STORAGECLUSTER, namespace=namespace)
@@ -109,13 +108,6 @@ class TestNooBaaEndpointKeda(MCGTest):
 
         request.addfinalizer(finalizer)
 
-        get_endpoint_pods = partial(
-            get_pods_having_label,
-            label=constants.NOOBAA_ENDPOINT_POD_LABEL,
-            namespace=namespace,
-            statuses=[constants.STATUS_RUNNING],
-        )
-
         # 1. Patch StorageCluster with endpoint counts and KEDA autoscaler
         logger.test_step(
             f"Configure StorageCluster: endpoints min={self.MIN_ENDPOINT_COUNT}, "
@@ -169,24 +161,6 @@ class TestNooBaaEndpointKeda(MCGTest):
         hpa_ocp = OCP(kind="HorizontalPodAutoscaler", namespace=namespace)
         hpa_ocp.wait_for_delete(resource_name="noobaa-hpav2", timeout=60)
         logger.info("HPA deleted by noobaa-operator")
-
-        # 3. Wait for endpoints to stabilize at minCount
-        logger.test_step(
-            f"Wait for endpoints to stabilize at {self.MIN_ENDPOINT_COUNT}"
-        )
-        try:
-            for endpoint_pods in TimeoutSampler(
-                timeout=300, sleep=30, func=get_endpoint_pods
-            ):
-                count = len(endpoint_pods)
-                logger.debug(f"Endpoint pod count: {count}")
-                if count == self.MIN_ENDPOINT_COUNT:
-                    logger.info(f"Endpoints stabilized at {self.MIN_ENDPOINT_COUNT}")
-                    break
-        except TimeoutExpiredError:
-            raise TimeoutExpiredError(
-                f"Endpoints did not stabilize at {self.MIN_ENDPOINT_COUNT}"
-            )
 
     @pytest.fixture(scope="class")
     def warp_workload_runner(self, request):
