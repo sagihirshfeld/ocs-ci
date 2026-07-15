@@ -11,6 +11,7 @@ from selenium.common.exceptions import (
     TimeoutException,
     StaleElementReferenceException,
 )
+from selenium.webdriver.support.ui import WebDriverWait
 
 from ocs_ci.ocs.ui.helpers_ui import format_locator
 from ocs_ci.ocs.ocp import get_ocp_url
@@ -661,6 +662,19 @@ class BucketsTab(ObjectStorage, ConfirmDialog):
         self.do_click((bucket_link_locator, By.XPATH))
         logger.info(f"Successfully navigated into bucket: {bucket_name}")
 
+    def navigate_into_folder(self, folder_name: str) -> None:
+        """
+        Click a folder link in the object browser to navigate into it.
+
+        Args:
+            folder_name (str): Name of the folder to navigate into.
+        """
+        folder_locator = format_locator(
+            self.bucket_tab["folder_link_by_name"], folder_name
+        )
+        self.do_click(folder_locator)
+        logger.info(f"Navigated into folder: {folder_name}")
+
     def navigate_to_folder_and_enable_versions(
         self,
         folder_name: str,
@@ -734,3 +748,69 @@ class BucketsTab(ObjectStorage, ConfirmDialog):
         self.do_click(self.bucket_tab["permissions_tab"])
         self.do_click(self.bucket_tab["bucket_policy_tab"])
         return BucketsTabPermissions()
+
+    def preview_object_content(self, object_key, timeout=15):
+        """
+        Open the Preview of an object in the object browser and return its
+        text content.
+
+        Assumes the object contains UTF-8 text. The blob is fetched via
+        Response.text(), so binary objects will produce garbled output.
+
+        Args:
+            object_key (str): The S3 object key visible in the object browser.
+            timeout (int): Seconds to wait for the preview tab to open.
+
+        Returns:
+            str: The text content of the previewed object.
+
+        Raises:
+            RuntimeError: If the blob fetch did not return a string (e.g.
+                the async script timed out and returned None, or the JS
+                fetch failed and returned a non-string error).
+
+        """
+        parent_handle = self.driver.current_window_handle
+        original_handles = set(self.driver.window_handles)
+
+        kebab_locator = format_locator(self.bucket_tab["object_row_kebab"], object_key)
+        self.do_click(kebab_locator, enable_screenshot=True)
+        self.do_click(self.bucket_tab["object_action_preview"], enable_screenshot=True)
+
+        WebDriverWait(self.driver, timeout).until(
+            lambda d: len(d.window_handles) > len(original_handles)
+        )
+
+        new_handles = set(self.driver.window_handles) - original_handles
+        preview_handle = new_handles.pop()
+        self.driver.switch_to.window(preview_handle)
+        blob_url = self.driver.current_url
+        logger.info(f"Preview tab opened with URL: {blob_url}")
+
+        # Fetch the blob content from the app window's JS context.
+        # execute_async_script injects a callback (cb) as the last JS argument;
+        # calling cb(value) is the only way to return data to Python - if cb is
+        # never called, the driver's script timeout fires and returns None.
+        # The .catch ensures cb is always invoked even on fetch failure.
+        self.driver.switch_to.window(parent_handle)
+        content = self.driver.execute_async_script(
+            "var cb = arguments[arguments.length - 1];"
+            "fetch(arguments[0]).then(r => r.text()).then(cb)"
+            ".catch(e => cb('ERROR:' + e));",
+            blob_url,
+        )
+
+        self.driver.switch_to.window(preview_handle)
+        self.driver.close()
+        self.driver.switch_to.window(parent_handle)
+
+        if not isinstance(content, str):
+            raise RuntimeError(
+                f"Blob fetch for '{object_key}' returned {type(content).__name__} "
+                f"instead of str (value: {content!r}). The async script may have "
+                f"timed out or the blob URL '{blob_url}' was not accessible from "
+                f"the app window."
+            )
+
+        logger.info(f"Preview content length for '{object_key}': {len(content)}")
+        return content
