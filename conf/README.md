@@ -180,6 +180,7 @@ version.
 * `fdf_upgrade_image_tag`: Image tag for the FDF upgrade catalog (e.g., v4.22). If not specified during upgrade, falls back to fdf_image_tag.
 * `fdf_upgrade_image_digest`: sha256 of the pre-release image for FDF upgrade. If not provided, automatically retrieved using skopeo.
 * `konflux_build` - Set to True if build is made by Konflux build system.
+* `vsphere_vm_start_timeout` - Number of seconds to wait for vsphere vms to start up (default: 900)
 
 #### REPORTING
 
