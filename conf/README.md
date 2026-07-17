@@ -177,6 +177,7 @@ version.
 * `fdf_pre_release_registry`: Registry where the pre-release image of FDF is hosted.
 * `fdf_pre_release_image_digest`: sha256 of the pre-release image of FDF to deploy.
 * `konflux_build` - Set to True if build is made by Konflux build system.
+* `vsphere_vm_start_timeout` - Number of seconds to wait for vsphere vms to start up (default: 900)
 
 #### REPORTING
 
