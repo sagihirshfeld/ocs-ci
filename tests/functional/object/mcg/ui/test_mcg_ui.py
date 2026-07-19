@@ -43,7 +43,6 @@ from ocs_ci.ocs.bucket_utils import (
 )
 from ocs_ci.ocs.ui.helpers_ui import format_locator
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -679,6 +678,7 @@ class TestBucketCreate:
         logger.info("Pagination test completed successfully")
 
     @tier1
+    @pytest.mark.polarion_id("OCS-6651")
     def test_namespace_bucket_object_preview(
         self,
         setup_ui_class_factory,
@@ -749,6 +749,7 @@ class TestBucketCreate:
         logger.info("Preview content matches the original uploaded data")
 
     @tier1
+    @pytest.mark.polarion_id("OCS-6652")
     def test_obc_bucket_directory_hierarchy_and_preview(
         self,
         request,
