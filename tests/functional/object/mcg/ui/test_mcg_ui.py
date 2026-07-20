@@ -38,8 +38,13 @@ from ocs_ci.ocs.ui.page_objects.page_navigator import PageNavigator
 from ocs_ci.ocs.scale_noobaa_lib import fetch_noobaa_storage_class_name
 from ocs_ci.ocs.bucket_utils import (
     s3_put_object,
-    sync_object_directory,
     wait_for_bucket_count_stability,
+)
+from selenium.webdriver.support.ui import WebDriverWait
+
+from ocs_ci.ocs.resources.objectbucket import (
+    get_s3_credentials_from_obc,
+    wait_for_obc_phase,
 )
 from ocs_ci.ocs.ui.helpers_ui import format_locator
 
@@ -677,7 +682,7 @@ class TestBucketCreate:
 
         logger.info("Pagination test completed successfully")
 
-    @tier1
+    @tier2
     @pytest.mark.polarion_id("OCS-6651")
     def test_namespace_bucket_object_preview(
         self,
@@ -748,24 +753,22 @@ class TestBucketCreate:
         )
         logger.info("Preview content matches the original uploaded data")
 
-    @tier1
+    @tier2
     @pytest.mark.polarion_id("OCS-6652")
     def test_obc_bucket_directory_hierarchy_and_preview(
         self,
         request,
         setup_ui_class_factory,
         mcg_obj,
-        awscli_pod,
     ):
         """
         Verify directory hierarchy and file preview in an OBC bucket.
 
         Steps:
         1. Create an OBC bucket via the UI
-        2. Create a nested directory on the awscli pod
-        3. Upload the directory to the bucket via AWS CLI sync
-        4. Verify the hierarchy is presented in the bucket's object browser
-        5. Verify the leaf files' content via the UI preview option
+        2. Upload objects with nested folder keys via S3 API
+        3. Verify the hierarchy is presented in the bucket's object browser
+        4. Verify the leaf files' content via the UI preview option
 
         """
         # 1. Create an OBC bucket via the UI
@@ -776,56 +779,55 @@ class TestBucketCreate:
         _, bucket_name = bucket_ui.create_bucket_ui(method="obc", return_name=True)
         logger.info(f"Created OBC bucket via UI: {bucket_name}")
 
+        wait_for_obc_phase(
+            bucket_name,
+            config.ENV_DATA["cluster_namespace"],
+            constants.STATUS_BOUND,
+            timeout=60,
+        )
+
+        obc_creds = get_s3_credentials_from_obc(
+            bucket_name, config.ENV_DATA["cluster_namespace"]
+        )
+        s3_bucket_name = obc_creds["bucket_name"]
+        logger.info(f"OBC '{bucket_name}' maps to S3 bucket '{s3_bucket_name}'")
+
+        obc_ocp = OCP(
+            kind=constants.OBC,
+            namespace=config.ENV_DATA["cluster_namespace"],
+        )
+
         def cleanup_obc():
             try:
-                OCP(
-                    kind="ObjectBucketClaim",
-                    namespace=config.ENV_DATA["cluster_namespace"],
-                ).delete(resource_name=bucket_name)
+                obc_ocp.delete(resource_name=bucket_name)
                 logger.info(f"Cleaned up OBC: {bucket_name}")
             except Exception:
                 logger.warning(f"Failed to clean up OBC: {bucket_name}")
 
         request.addfinalizer(cleanup_obc)
 
-        # 2. Create a nested directory on the awscli pod
-        logger.test_step("Create nested directory structure on awscli pod")
+        # 2. Upload objects with folder-like keys to create a hierarchy
+        logger.test_step("Upload objects with nested folder keys via S3 API")
         f1_content = "Content of leaf file f1"
         f2_content = "Content of leaf file f2"
-        base_dir = f"/tmp/hierarchy-test-{uuid.uuid4().hex[:8]}"
-
-        awscli_pod.exec_cmd_on_pod(
-            command=(
-                f"mkdir -p {base_dir}/d1/d1.1/d2.1 {base_dir}/d1/d1.2/d2.2 && "
-                f"printf '%s' '{f1_content}' > {base_dir}/d1/d1.1/d2.1/f1.txt && "
-                f"printf '%s' '{f2_content}' > {base_dir}/d1/d1.2/d2.2/f2.txt"
-            ),
-            out_yaml_format=False,
-        )
-
-        def cleanup_pod_dir():
-            try:
-                awscli_pod.exec_cmd_on_pod(
-                    command=f"rm -rf {base_dir}", out_yaml_format=False
-                )
-            except Exception:
-                pass
-
-        request.addfinalizer(cleanup_pod_dir)
-
-        # 3. Upload the directory to the bucket via AWS CLI sync
-        logger.test_step("Sync directory to bucket via AWS CLI")
-        sync_object_directory(
-            awscli_pod, f"{base_dir}/", f"s3://{bucket_name}", s3_obj=mcg_obj
-        )
-        logger.info(f"Synced {base_dir}/ to s3://{bucket_name}")
+        object_keys = {
+            "d1/d1.1/d2.1/f1.txt": f1_content,
+            "d1/d1.2/d2.2/f2.txt": f2_content,
+        }
+        for key, content in object_keys.items():
+            s3_put_object(mcg_obj, s3_bucket_name, key, data=content)
+            logger.info(f"Uploaded {key} to {s3_bucket_name}")
 
         # 4. Verify the hierarchy in the object browser
         logger.test_step("Verify directory hierarchy in the object browser")
-        bucket_ui.navigate_to_bucket(bucket_name)
+        bucket_ui.navigate_to_bucket(s3_bucket_name)
+        bucket_ui.do_click(bucket_ui.bucket_tab["refresh_objects_button"])
 
         folder_locator = format_locator(bucket_ui.bucket_tab["file_name_text"], "d1")
-        assert bucket_ui.get_elements(folder_locator), "d1/ not found at bucket root"
+        WebDriverWait(bucket_ui.driver, 30).until(
+            lambda d: bucket_ui.get_elements(folder_locator),
+            message="d1/ not found at bucket root within 30s",
+        )
 
         bucket_ui.navigate_into_folder("d1")
         for subfolder in ("d1.1", "d1.2"):
@@ -848,7 +850,7 @@ class TestBucketCreate:
 
         # Verify second branch
         logger.test_step("Verify f2.txt content via preview (d1/d1.2/d2.2/)")
-        bucket_ui.navigate_to_bucket(bucket_name)
+        bucket_ui.navigate_to_bucket(s3_bucket_name)
         bucket_ui.navigate_into_folder("d1")
         bucket_ui.navigate_into_folder("d1.2")
         bucket_ui.navigate_into_folder("d2.2")
