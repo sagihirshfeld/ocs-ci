@@ -660,6 +660,7 @@ class BucketsTab(ObjectStorage, ConfirmDialog):
         logger.info(f"Looking for bucket link with text: {bucket_name}")
         bucket_link_locator = f"//tr//a[contains(text(), '{bucket_name}')]"
         self.do_click((bucket_link_locator, By.XPATH))
+        self.page_has_loaded()
         logger.info(f"Successfully navigated into bucket: {bucket_name}")
 
     def navigate_into_folder(self, folder_name: str) -> None:
@@ -673,6 +674,7 @@ class BucketsTab(ObjectStorage, ConfirmDialog):
             self.bucket_tab["folder_link_by_name"], folder_name
         )
         self.do_click(folder_locator)
+        self.page_has_loaded()
         logger.info(f"Navigated into folder: {folder_name}")
 
     def navigate_to_folder_and_enable_versions(
