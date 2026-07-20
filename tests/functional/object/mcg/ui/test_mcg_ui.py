@@ -40,13 +40,10 @@ from ocs_ci.ocs.bucket_utils import (
     s3_put_object,
     wait_for_bucket_count_stability,
 )
-from selenium.webdriver.support.ui import WebDriverWait
-
 from ocs_ci.ocs.resources.objectbucket import (
     get_s3_credentials_from_obc,
     wait_for_obc_phase,
 )
-from ocs_ci.ocs.ui.helpers_ui import format_locator
 
 logger = logging.getLogger(__name__)
 
@@ -733,14 +730,8 @@ class TestBucketCreate:
 
         # 4. Verify the object key is listed in the object browser
         logger.test_step("Verify object key is listed in the object browser")
-        file_locator = format_locator(
-            bucket_ui.bucket_tab["file_name_text"], object_key
-        )
-        elements = bucket_ui.get_elements(file_locator)
-        assert elements, (
-            f"Object '{object_key}' not found in object browser "
-            f"for bucket '{bucket_name}'"
-        )
+        bucket_ui.do_click(bucket_ui.bucket_tab["refresh_objects_button"])
+        bucket_ui.wait_for_object_listed(object_key)
         logger.info(f"Object '{object_key}' is visible in the object browser")
 
         # 5. Open Preview for the object and verify the content matches
@@ -802,7 +793,7 @@ class TestBucketCreate:
                 obc_ocp.delete(resource_name=bucket_name)
                 logger.info(f"Cleaned up OBC: {bucket_name}")
             except Exception:
-                logger.warning(f"Failed to clean up OBC: {bucket_name}")
+                logger.warning(f"Failed to clean up OBC: {bucket_name}", exc_info=True)
 
         request.addfinalizer(cleanup_obc)
 
@@ -818,29 +809,23 @@ class TestBucketCreate:
             s3_put_object(mcg_obj, s3_bucket_name, key, data=content)
             logger.info(f"Uploaded {key} to {s3_bucket_name}")
 
-        # 4. Verify the hierarchy in the object browser
+        # 3. Verify the hierarchy in the object browser
         logger.test_step("Verify directory hierarchy in the object browser")
         bucket_ui.navigate_to_bucket(s3_bucket_name)
         bucket_ui.do_click(bucket_ui.bucket_tab["refresh_objects_button"])
-
-        folder_locator = format_locator(bucket_ui.bucket_tab["file_name_text"], "d1")
-        WebDriverWait(bucket_ui.driver, 30).until(
-            lambda d: bucket_ui.get_elements(folder_locator),
-            message="d1/ not found at bucket root within 30s",
-        )
+        bucket_ui.wait_for_object_listed("d1")
 
         bucket_ui.navigate_into_folder("d1")
         for subfolder in ("d1.1", "d1.2"):
-            locator = format_locator(bucket_ui.bucket_tab["file_name_text"], subfolder)
-            assert bucket_ui.get_elements(locator), f"{subfolder}/ not found in d1/"
+            assert bucket_ui.is_object_listed(
+                subfolder
+            ), f"{subfolder}/ not found in d1/"
 
-        # 5. Verify leaf files via preview - first branch
+        # 4. Verify leaf files via preview - first branch
         logger.test_step("Verify f1.txt content via preview (d1/d1.1/d2.1/)")
         bucket_ui.navigate_into_folder("d1.1")
         bucket_ui.navigate_into_folder("d2.1")
-
-        file_locator = format_locator(bucket_ui.bucket_tab["file_name_text"], "f1.txt")
-        assert bucket_ui.get_elements(file_locator), "f1.txt not found in d2.1/"
+        assert bucket_ui.is_object_listed("f1.txt"), "f1.txt not found in d2.1/"
 
         preview = bucket_ui.preview_object_content("f1.txt")
         assert (
@@ -855,8 +840,7 @@ class TestBucketCreate:
         bucket_ui.navigate_into_folder("d1.2")
         bucket_ui.navigate_into_folder("d2.2")
 
-        file_locator = format_locator(bucket_ui.bucket_tab["file_name_text"], "f2.txt")
-        assert bucket_ui.get_elements(file_locator), "f2.txt not found in d2.2/"
+        assert bucket_ui.is_object_listed("f2.txt"), "f2.txt not found in d2.2/"
 
         preview = bucket_ui.preview_object_content("f2.txt")
         assert (

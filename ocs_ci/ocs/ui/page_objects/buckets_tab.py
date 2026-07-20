@@ -677,6 +677,35 @@ class BucketsTab(ObjectStorage, ConfirmDialog):
         self.page_has_loaded()
         logger.info(f"Navigated into folder: {folder_name}")
 
+    def wait_for_object_listed(self, object_name, timeout=30):
+        """
+        Wait for an object or folder to appear in the object browser listing.
+
+        Args:
+            object_name (str): Name of the object or folder to wait for.
+            timeout (int): Seconds to wait before timing out.
+
+        """
+        locator = format_locator(self.bucket_tab["file_name_text"], object_name)
+        WebDriverWait(self.driver, timeout).until(
+            lambda d: self.get_elements(locator),
+            message=f"'{object_name}' not found in object browser within {timeout}s",
+        )
+
+    def is_object_listed(self, object_name):
+        """
+        Check if an object or folder is visible in the object browser listing.
+
+        Args:
+            object_name (str): Name of the object or folder.
+
+        Returns:
+            bool: True if the object is listed, False otherwise.
+
+        """
+        locator = format_locator(self.bucket_tab["file_name_text"], object_name)
+        return bool(self.get_elements(locator))
+
     def navigate_to_folder_and_enable_versions(
         self,
         folder_name: str,
@@ -785,26 +814,23 @@ class BucketsTab(ObjectStorage, ConfirmDialog):
 
         new_handles = set(self.driver.window_handles) - original_handles
         preview_handle = new_handles.pop()
-        self.driver.switch_to.window(preview_handle)
-        blob_url = self.driver.current_url
-        logger.info(f"Preview tab opened with URL: {blob_url}")
+        try:
+            self.driver.switch_to.window(preview_handle)
+            blob_url = self.driver.current_url
+            logger.info(f"Preview tab opened with URL: {blob_url}")
 
-        # Fetch the blob content from the app window's JS context.
-        # execute_async_script injects a callback (cb) as the last JS argument;
-        # calling cb(value) is the only way to return data to Python - if cb is
-        # never called, the driver's script timeout fires and returns None.
-        # The .catch ensures cb is always invoked even on fetch failure.
-        self.driver.switch_to.window(parent_handle)
-        content = self.driver.execute_async_script(
-            "var cb = arguments[arguments.length - 1];"
-            "fetch(arguments[0]).then(r => r.text()).then(cb)"
-            ".catch(e => cb('ERROR:' + e));",
-            blob_url,
-        )
-
-        self.driver.switch_to.window(preview_handle)
-        self.driver.close()
-        self.driver.switch_to.window(parent_handle)
+            self.driver.switch_to.window(parent_handle)
+            content = self.driver.execute_async_script(
+                "var cb = arguments[arguments.length - 1];"
+                "fetch(arguments[0]).then(r => r.text()).then(cb)"
+                ".catch(e => cb('ERROR:' + e));",
+                blob_url,
+            )
+        finally:
+            if preview_handle in self.driver.window_handles:
+                self.driver.switch_to.window(preview_handle)
+                self.driver.close()
+            self.driver.switch_to.window(parent_handle)
 
         if not isinstance(content, str):
             raise RuntimeError(
@@ -813,6 +839,9 @@ class BucketsTab(ObjectStorage, ConfirmDialog):
                 f"timed out or the blob URL '{blob_url}' was not accessible from "
                 f"the app window."
             )
+
+        if content.startswith("ERROR:"):
+            raise RuntimeError(f"Blob fetch for '{object_key}' failed: {content}")
 
         logger.info(f"Preview content length for '{object_key}': {len(content)}")
         return content

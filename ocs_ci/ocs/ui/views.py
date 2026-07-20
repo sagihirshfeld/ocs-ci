@@ -3377,11 +3377,7 @@ bucket_tab = {
         By.XPATH,
     ),
     "object_action_preview": (
-        "//button[contains(@class,'c-menu__item')" " and normalize-space()='Preview']",
-        By.XPATH,
-    ),
-    "object_action_download": (
-        "//button[contains(@class,'c-menu__item')" " and normalize-space()='Download']",
+        "//button[normalize-space()='Preview']",
         By.XPATH,
     ),
     "folder_link_by_name": (
@@ -3389,7 +3385,7 @@ bucket_tab = {
         By.XPATH,
     ),
     "refresh_objects_button": (
-        "//button[contains(@class,'c-button') and .//span[text()='Refresh']]",
+        "//button[.//span[text()='Refresh']]",
         By.XPATH,
     ),
 }
